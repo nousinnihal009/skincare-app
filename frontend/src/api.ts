@@ -86,3 +86,84 @@ export async function getEnvironmentRisks(params: {
   if (params.temperature !== undefined) query.set('temperature', String(params.temperature));
   return apiRequest(`/api/environment/risks?${query.toString()}`);
 }
+
+// ── PDF Report ───────────────────────────────────────────
+export async function generatePDFReport(data: any): Promise<Blob> {
+  const res = await fetch(`${API_BASE}/api/report/pdf`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'PDF generation failed');
+  }
+  return res.blob();
+}
+
+// ── Skin Type Detection ──────────────────────────────────
+export async function detectSkinType(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiRequest('/api/skin-type/detect', { method: 'POST', body: formData });
+}
+
+export async function getSkinTypeInfo(skinType: string) {
+  return apiRequest(`/api/skin-type/info/${encodeURIComponent(skinType)}`);
+}
+
+// ── Aging Prediction ─────────────────────────────────────
+export async function predictAging(data: {
+  age: number;
+  skin_type: string;
+  sun_exposure: string;
+  smoking: boolean;
+  detected_condition?: string;
+  uv_index?: number;
+  humidity?: number;
+}) {
+  return apiRequest('/api/aging/predict', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+// ── Auth ─────────────────────────────────────────────────
+export async function authRegister(data: {
+  email: string;
+  username: string;
+  password: string;
+  full_name?: string;
+  skin_type?: string;
+  age?: number;
+}) {
+  return apiRequest('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function authLogin(data: { email: string; password: string }) {
+  return apiRequest('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getProfile(token: string) {
+  return apiRequest('/api/auth/profile', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function updateProfile(token: string, data: {
+  full_name?: string;
+  skin_type?: string;
+  age?: number;
+}) {
+  return apiRequest('/api/auth/profile', {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(data),
+  });
+}
