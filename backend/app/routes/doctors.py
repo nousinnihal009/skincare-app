@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from typing import Optional
 import math
 
-router = APIRouter(prefix="/api", tags=["doctors"])
+router = APIRouter(prefix="/api/doctors", tags=["doctors"])
 
 # Expanded Dermatologist database with coordinates
 DOCTORS_DATABASE = [
