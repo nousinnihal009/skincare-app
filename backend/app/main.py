@@ -15,6 +15,10 @@ from app.routes.recommendations import router as recommendations_router
 from app.routes.doctors import router as doctors_router
 from app.routes.environment import router as environment_router
 from app.routes.health import router as health_router
+from app.routes.report import router as report_router
+from app.routes.skin_type import router as skin_type_router
+from app.routes.aging import router as aging_router
+from app.routes.auth import router as auth_router
 
 
 @asynccontextmanager
@@ -57,6 +61,10 @@ app.include_router(recommendations_router)
 app.include_router(doctors_router)
 app.include_router(environment_router)
 app.include_router(health_router)
+app.include_router(report_router)
+app.include_router(skin_type_router)
+app.include_router(aging_router)
+app.include_router(auth_router)
 
 
 @app.get("/")
@@ -75,5 +83,11 @@ def root():
             "doctors": "GET /api/doctors/search",
             "environment": "GET /api/environment/risks",
             "health": "GET /health",
+            "report_pdf": "POST /api/report/pdf",
+            "skin_type_detect": "POST /api/skin-type/detect",
+            "aging_predict": "POST /api/aging/predict",
+            "auth_register": "POST /api/auth/register",
+            "auth_login": "POST /api/auth/login",
+            "auth_profile": "GET /api/auth/profile",
         }
     }
