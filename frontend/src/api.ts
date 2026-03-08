@@ -57,12 +57,22 @@ export async function checkIngredients(ingredients: string[]) {
 export async function searchDoctors(params: {
   specialty?: string;
   city?: string;
+  lat?: number;
+  lon?: number;
+  radius?: number;
   telemedicine?: boolean;
+  insurance?: boolean;
+  sort_by?: string;
 } = {}) {
   const query = new URLSearchParams();
   if (params.specialty) query.set('specialty', params.specialty);
   if (params.city) query.set('city', params.city);
+  if (params.lat !== undefined) query.set('lat', String(params.lat));
+  if (params.lon !== undefined) query.set('lon', String(params.lon));
+  if (params.radius !== undefined) query.set('radius', String(params.radius));
   if (params.telemedicine !== undefined) query.set('telemedicine', String(params.telemedicine));
+  if (params.insurance !== undefined) query.set('insurance', String(params.insurance));
+  if (params.sort_by) query.set('sort_by', params.sort_by);
   return apiRequest(`/api/doctors/search?${query.toString()}`);
 }
 
