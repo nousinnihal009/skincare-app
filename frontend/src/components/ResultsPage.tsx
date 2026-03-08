@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { generatePDFReport } from '../api';
 import type { AnalysisResult, Page } from '../App';
 
 interface Props {
@@ -21,6 +22,38 @@ const ResultsPage: React.FC<Props> = ({ result, uploadedImageUrl, onNavigate }) 
   }
 
   const { prediction, top3, risk_assessment, condition_info, treatments, gradcam_heatmap, confidence_distribution, urgent_warning, disclaimer } = result;
+
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState('');
+
+  const handleDownloadPDF = async () => {
+    setPdfLoading(true);
+    setPdfError('');
+    try {
+      const blob = await generatePDFReport({
+        prediction,
+        top3,
+        risk_assessment,
+        condition_info,
+        treatments,
+        gradcam_heatmap,
+        confidence_distribution,
+        urgent_warning,
+        disclaimer,
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `DermAI_Report_${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setPdfError(err.message || 'PDF generation failed');
+    }
+    setPdfLoading(false);
+  };
 
   const riskBadgeClass = risk_assessment.level === 'critical' || risk_assessment.level === 'high'
     ? 'badge-red' : risk_assessment.level === 'moderate' ? 'badge-amber' : 'badge-green';
@@ -214,12 +247,22 @@ const ResultsPage: React.FC<Props> = ({ result, uploadedImageUrl, onNavigate }) 
       </div>
 
       {/* Action Buttons */}
-      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px' }}>
+      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
         <button className="btn-primary" onClick={() => onNavigate('recommendations')}>🧴 Get Skincare Routine</button>
+        <button className="btn-primary" onClick={handleDownloadPDF} disabled={pdfLoading} id="export-pdf-btn"
+          style={{ background: pdfLoading ? 'var(--dark-500)' : 'linear-gradient(135deg, #10b981, #06b6d4)' }}>
+          {pdfLoading ? '⏳ Generating...' : '📄 Export PDF Report'}
+        </button>
         <button className="btn-secondary" onClick={() => onNavigate('chat')}>🤖 Ask AI About This</button>
         <button className="btn-secondary" onClick={() => onNavigate('doctors')}>👨‍⚕️ Find a Dermatologist</button>
         <button className="btn-secondary" onClick={() => onNavigate('analysis')}>🔬 Analyze Another Image</button>
       </div>
+
+      {pdfError && (
+        <div style={{ marginBottom: '16px', padding: '12px', borderRadius: '10px', background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.2)', color: '#fb7185', fontSize: '0.9rem' }}>
+          ❌ {pdfError}
+        </div>
+      )}
 
       {/* Disclaimer */}
       <div className="disclaimer">
