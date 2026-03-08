@@ -231,10 +231,10 @@ const ProgressTracker: React.FC<Props> = ({ onNavigate }) => {
             }} />
 
             {entries.map((entry, i) => (
-              <div key={entry.id} className="glass-card" style={{
+              <div key={entry.id} className="glass-card animate-fade-in-up" style={{
                 marginBottom: '16px', position: 'relative',
-                animationDelay: `${i * 0.08}s`, opacity: 0,
-              }} className={`glass-card animate-fade-in-up`}>
+                animationDelay: `${i * 0.08}s`,
+              }}>
                 {/* Timeline dot */}
                 <div style={{
                   position: 'absolute', left: '-26px', top: '20px',
