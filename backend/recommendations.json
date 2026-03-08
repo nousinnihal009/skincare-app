@@ -1,0 +1,53 @@
+{
+  "acne": {
+    "skincare": [
+      "Use a gentle foaming cleanser twice daily.",
+      "Avoid oily skincare and comedogenic products.",
+      "Incorporate salicylic acid or benzoyl peroxide treatment."
+    ],
+    "medication": [
+      "Consult a dermatologist about topical retinoids.",
+      "Oral antibiotics may be prescribed for severe acne."
+    ]
+  },
+  "eczema": {
+    "skincare": [
+      "Use fragrance-free moisturizers regularly.",
+      "Take lukewarm showers, avoid hot water.",
+      "Wear cotton clothing to reduce irritation."
+    ],
+    "medication": [
+      "Topical corticosteroids may be prescribed.",
+      "Antihistamines can reduce itching."
+    ]
+  },
+  "rosacea": {
+    "skincare": [
+      "Avoid alcohol, spicy foods, and hot drinks.",
+      "Use gentle cleansers and mineral sunscreens.",
+      "Avoid harsh exfoliants."
+    ],
+    "medication": [
+      "Topical metronidazole or azelaic acid may help.",
+      "Oral doxycycline may be prescribed for severe cases."
+    ]
+  },
+  "melasma": {
+    "skincare": [
+      "Apply broad-spectrum sunscreen SPF 50 daily.",
+      "Use products with niacinamide or vitamin C.",
+      "Avoid excessive sun exposure."
+    ],
+    "medication": [
+      "Topical hydroquinone or retinoids may be prescribed.",
+      "Chemical peels may be considered under supervision."
+    ]
+  },
+  "normal": {
+    "skincare": [
+      "Maintain a balanced routine with cleanser, moisturizer, sunscreen.",
+      "Stay hydrated and eat a nutrient-rich diet."
+    ],
+    "medication": []
+  }
+}
