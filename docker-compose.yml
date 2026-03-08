@@ -1,0 +1,42 @@
+# SkinCare AI Platform — Docker Compose
+# Orchestrates the full application stack: backend API + frontend + optional database
+
+version: "3.9"
+
+services:
+  # ── Backend API ────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dermai-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/checkpoints:/app/checkpoints:ro
+      - backend-data:/app/data
+    environment:
+      - JWT_SECRET=${JWT_SECRET:-dermai-production-secret-change-me}
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # ── Frontend ───────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: dermai-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  backend-data:
