@@ -7,8 +7,12 @@ import ChatPage from './components/ChatPage';
 import DoctorFinder from './components/DoctorFinder';
 import SkincareRecommendations from './components/SkincareRecommendations';
 import IngredientScanner from './components/IngredientScanner';
+import ProgressTracker from './components/ProgressTracker';
+import AgingPrediction from './components/AgingPrediction';
+import SkinTypeDetection from './components/SkinTypeDetection';
+import AuthProfile from './components/AuthProfile';
 
-export type Page = 'landing' | 'analysis' | 'results' | 'dashboard' | 'chat' | 'doctors' | 'recommendations' | 'ingredients';
+export type Page = 'landing' | 'analysis' | 'results' | 'dashboard' | 'chat' | 'doctors' | 'recommendations' | 'ingredients' | 'progress' | 'aging' | 'skin-type' | 'profile';
 
 // Shared state for analysis results
 export interface AnalysisResult {
@@ -42,14 +46,18 @@ const App: React.FC = () => {
     navigate('results');
   };
 
-  const navItems: { id: Page; label: string }[] = [
+  const navItems: { id: Page; label: string; icon?: string }[] = [
     { id: 'landing', label: 'Home' },
     { id: 'analysis', label: 'Analyze' },
     { id: 'dashboard', label: 'Dashboard' },
     { id: 'chat', label: 'AI Chat' },
-    { id: 'doctors', label: 'Find Doctors' },
+    { id: 'doctors', label: 'Doctors' },
     { id: 'recommendations', label: 'Skincare' },
     { id: 'ingredients', label: 'Ingredients' },
+    { id: 'progress', label: 'Progress' },
+    { id: 'skin-type', label: 'Skin Type' },
+    { id: 'aging', label: 'Aging' },
+    { id: 'profile', label: '👤' },
   ];
 
   const renderPage = () => {
@@ -70,6 +78,14 @@ const App: React.FC = () => {
         return <SkincareRecommendations result={analysisResult} />;
       case 'ingredients':
         return <IngredientScanner />;
+      case 'progress':
+        return <ProgressTracker onNavigate={navigate} />;
+      case 'aging':
+        return <AgingPrediction />;
+      case 'skin-type':
+        return <SkinTypeDetection />;
+      case 'profile':
+        return <AuthProfile />;
       default:
         return <LandingPage onNavigate={navigate} />;
     }
