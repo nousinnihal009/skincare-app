@@ -27,8 +27,8 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
 # ─── Services we consume (do not rewrite) ───────────────────────────
-from services.weather import get_weather_context, WeatherContext
-from services.vision import get_vision_risk_flag, RiskLevel
+from app.services.weather import get_weather_context, WeatherContext
+from app.services.vision import get_vision_risk_flag, RiskLevel
 
 # ─── Auth dependency (existing) ─────────────────────────────────────
 from app.routes.auth import verify_token
