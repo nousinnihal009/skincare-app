@@ -38,7 +38,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
           className="chat-header__btn chat-header__btn--new"
           onClick={onNewChat}
           disabled={isStreaming}
-          aria-label="Start new conversation"
+          aria-label="Start new chat"
           title="New chat"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -51,7 +51,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
           className="chat-header__btn chat-header__btn--clear"
           onClick={onClearChat}
           disabled={isStreaming}
-          aria-label="Clear conversation history"
+          aria-label="Clear conversation"
           title="Clear chat"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
