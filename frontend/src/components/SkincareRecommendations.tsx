@@ -4,7 +4,7 @@
 // ──────────────────────────────────────────────────────────
 
 import React, { useState } from 'react'
-import { useForm, FormProvider, Controller } from 'react-hook-form'
+import { useForm, FormProvider, Controller, useFormContext } from 'react-hook-form'
 import { useMutation } from '@tanstack/react-query'
 import axiosInstance from '../lib/axios'
 import { useLocation } from '../hooks/useLocation'
@@ -773,8 +773,7 @@ const Step4Environment: React.FC = () => {
 // =====================================================================
 
 function useFormContextSafe() {
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const ctx = require('react-hook-form').useFormContext<RoutineRequest>()
+  const ctx = useFormContext<RoutineRequest>()
   return ctx
 }
 
