@@ -10,11 +10,11 @@ import json
 import logging
 import os
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Literal, Optional
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field, model_validator
 
@@ -37,8 +37,10 @@ _openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 GPT_MINI_MODEL = "gpt-4o-mini"
 LLM_TIMEOUT_SECONDS = 2.0
 
-# ─── Simple in-process cache ─────────────────────────────────────────
-_routine_cache: dict[str, dict[str, Any]] = {}
+import asyncio
+from app.utils.rate_limit import create_rate_limiter
+
+rate_limit_dependency = create_rate_limiter(limit=20, window_seconds=60)
 
 
 # =====================================================================
@@ -97,9 +99,8 @@ class RoutineRequest(BaseModel):
                 if "dermatologist" not in self.skin_goals:
                     self.skin_goals.append("dermatologist")
                 logger.warning(
-                    "Medical validator override: removed 'brightening' from skin_goals "
-                    "for %s; added 'dermatologist' goal",
-                    self.medical_condition,
+                    "RoutineRequest validator: removed 'brightening' goal — "
+                    f"contraindicated for {self.medical_condition}. Added 'dermatologist'."
                 )
 
         # Melanoma risk + post_sun → reset situation, override primary concern
@@ -110,8 +111,8 @@ class RoutineRequest(BaseModel):
             self.special_situation = "none"
             self.primary_concern = "sun_damage"
             logger.warning(
-                "Medical validator override: melanoma_risk with post_sun — "
-                "set special_situation='none', primary_concern='sun_damage'"
+                "RoutineRequest validator: melanoma_risk + post_sun detected — "
+                "overriding primary_concern to 'sun_damage', clearing special_situation."
             )
 
         return self
@@ -702,6 +703,55 @@ _MEDICAL_DISCLAIMERS: dict[str, str] = {
 }
 
 
+class RoutineCache:
+    def __init__(self, ttl_minutes: int = 30):
+        self._store: dict[str, tuple[RoutineResponse, datetime]] = {}
+        self._ttl = timedelta(minutes=ttl_minutes)
+        self._lock = asyncio.Lock()
+
+    def _make_key(self, request: RoutineRequest, weather: WeatherContext | None) -> str:
+        parts = [
+            request.skin_type,
+            request.primary_concern,
+            request.age_group,
+            ",".join(sorted(request.skin_goals)),
+            request.special_situation,
+            request.medical_condition,
+            str(request.pollution_exposure),
+            str(request.include_weekly),
+            str(round(weather.temperature_c / 5) * 5) if weather else "no_weather",
+            str(round(weather.uv_index)) if weather else "no_uv",
+        ]
+        return hashlib.sha256("|".join(parts).encode()).hexdigest()
+
+    async def get(self, request: RoutineRequest, weather: WeatherContext | None) -> RoutineResponse | None:
+        key = self._make_key(request, weather)
+        async with self._lock:
+            entry = self._store.get(key)
+            if entry is None:
+                return None
+            response, cached_at = entry
+            if datetime.now(timezone.utc).replace(tzinfo=None) - cached_at.replace(tzinfo=None) > self._ttl:
+                del self._store[key]
+                return None
+            return response
+
+    async def set(self, request: RoutineRequest, weather: WeatherContext | None, response: RoutineResponse) -> None:
+        key = self._make_key(request, weather)
+        async with self._lock:
+            self._store[key] = (response, datetime.now(timezone.utc).replace(tzinfo=None))
+
+    async def purge_expired(self) -> int:
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        async with self._lock:
+            expired = [k for k, (_, ts) in self._store.items() if now - ts.replace(tzinfo=None) > self._ttl]
+            for k in expired:
+                del self._store[k]
+            return len(expired)
+
+# Module-level singleton
+_routine_cache = RoutineCache(ttl_minutes=30)
+
 # =====================================================================
 # RoutineRuleEngine
 # =====================================================================
@@ -1121,6 +1171,10 @@ class RoutineRuleEngine:
         pm_steps = self._to_steps(pm_candidates, climate_adjusted, condition)
         weekly_steps = self._to_steps(weekly_candidates, climate_adjusted, condition) if weekly_candidates else None
 
+        # Melanoma AM Step Reordering
+        if condition == "melanoma_risk":
+            am_steps = self._enforce_melanoma_spf_ordering(am_steps)
+
         # Step 10: Profile summary
         profile = self._build_profile_summary()
 
@@ -1366,6 +1420,36 @@ class RoutineRuleEngine:
 
         return am, pm
 
+    def _enforce_melanoma_spf_ordering(self, am_steps: list[RoutineStep]) -> list[RoutineStep]:
+        """
+        Ensures SPF always appears immediately after any photosensitizing ingredient in AM.
+        Photosensitizers: retinol, AHA, BHA, vitamin C (L-ascorbic acid).
+        If SPF is not immediately after a photosensitizer, move it to follow the last one.
+        """
+        photosensitizer_indices = [
+            i for i, s in enumerate(am_steps)
+            if any(tag in s.ingredient_recommendation.lower()
+                   for tag in ['retinol', 'glycolic', 'lactic', 'salicylic', 'l-ascorbic'])
+        ]
+        if not photosensitizer_indices:
+            return am_steps
+
+        spf_index = next(
+            (i for i, s in enumerate(am_steps) if 'spf' in s.category.lower()), None
+        )
+        if spf_index is None:
+            return am_steps
+
+        last_photosensitizer = max(photosensitizer_indices)
+        if spf_index <= last_photosensitizer:
+            spf_step = am_steps.pop(spf_index)
+            am_steps.insert(last_photosensitizer + 1, spf_step)
+            # Renumber steps
+            for i, step in enumerate(am_steps):
+                step.step = i + 1
+
+        return am_steps
+
     def _ensure_spf_last_am(
         self, am: list[IngredientCandidate]
     ) -> list[IngredientCandidate]:
@@ -1584,8 +1668,12 @@ def _cache_key(req: RoutineRequest, weather: WeatherContext | None) -> str:
 # =====================================================================
 
 
-@router.post("/skincare-routine")
-async def get_skincare_routine_v2(payload: RoutineRequest):
+@router.post("/skincare-routine", response_model=RoutineResponse)
+async def get_skincare_routine_v2(
+    payload: RoutineRequest,
+    req: Request,
+    _: None = Depends(rate_limit_dependency),
+):
     """
     Generate a personalized, multi-step skincare routine.
     Extended with medical condition safety overrides and pollution exposure modifiers.
@@ -1601,10 +1689,10 @@ async def get_skincare_routine_v2(payload: RoutineRequest):
             logger.warning("Weather fetch failed: %s", e)
 
     # Check cache
-    cache_key = _cache_key(payload, weather)
-    if cache_key in _routine_cache:
+    cached = await _routine_cache.get(payload, weather)
+    if cached is not None:
         logger.info("Cache hit for routine request")
-        return _routine_cache[cache_key]
+        return cached
 
     # Run rule engine
     try:
@@ -1635,10 +1723,9 @@ async def get_skincare_routine_v2(payload: RoutineRequest):
         response.weekly_treatments = enriched[am_count + pm_count :]
 
     # Cache result
-    result = response.model_dump(mode="json")
-    _routine_cache[cache_key] = result
+    await _routine_cache.set(payload, weather, response)
 
-    return result
+    return response
 
 
 # ── Legacy endpoints (unchanged) ──────────────────────────────────
