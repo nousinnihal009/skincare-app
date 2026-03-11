@@ -1,142 +1,621 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { sendChatMessage } from '../api';
+/**
+ * ChatPage.tsx — Root chat page component
+ *
+ * Orchestrates all sub-components and manages:
+ * - SSE stream connection via Fetch API ReadableStream
+ * - Local useReducer for active message stream state
+ * - Zustand store for cross-session state
+ * - Geolocation for weather-aware advice
+ */
 
-interface Message {
-  id: number;
-  text: string;
-  sender: 'user' | 'bot';
-  timestamp: Date;
+import React, { useReducer, useState, useCallback, useRef, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import ChatHeader from './chat/ChatHeader';
+import MessageList, { ChatMessage } from './chat/MessageList';
+import SuggestionChips from './chat/SuggestionChips';
+import MessageInputBar from './chat/MessageInputBar';
+import { useChatStore } from '../store/chatStore';
+import { ToolCallStatus, RoutinePayload } from './chat/AssistantMessage';
+
+// ─── Constants ───────────────────────────────────────────────
+
+const API_BASE = 'http://127.0.0.1:8000';
+
+function generateSessionId(): string {
+  return crypto.randomUUID();
 }
 
-const QUICK_QUESTIONS = [
-  "Is melanoma dangerous?",
-  "What treatments exist for eczema?",
-  "Should I see a doctor?",
-  "How should I use retinol?",
-  "Tell me about sunscreen",
-  "What causes acne?",
-  "How to care for dry skin?",
-];
+function getAuthToken(): string | null {
+  try {
+    const raw = localStorage.getItem('token');
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
+// ─── SSE Event Types ─────────────────────────────────────────
+
+interface SSETextDelta {
+  type: 'text_delta';
+  content: string;
+}
+
+interface SSEToolCall {
+  type: 'tool_call';
+  tool_name: string;
+  status: 'running' | 'complete' | 'failed';
+}
+
+interface SSEStructuredRoutine {
+  type: 'structured_routine';
+  payload: RoutinePayload;
+}
+
+interface SSESuggestionChips {
+  type: 'suggestion_chips';
+  chips: string[];
+}
+
+interface SSEDone {
+  type: 'done';
+}
+
+interface SSEError {
+  type: 'error';
+  message: string;
+}
+
+type SSEEvent =
+  | SSETextDelta
+  | SSEToolCall
+  | SSEStructuredRoutine
+  | SSESuggestionChips
+  | SSEDone
+  | SSEError;
+
+// ─── Reducer ─────────────────────────────────────────────────
+
+interface ChatState {
+  messages: ChatMessage[];
+  isStreaming: boolean;
+  chips: string[];
+  error: string | null;
+  currentToolCalls: ToolCallStatus[];
+  currentRoutine: RoutinePayload | null;
+}
+
+type ChatAction =
+  | { type: 'ADD_USER_MESSAGE'; payload: ChatMessage }
+  | { type: 'START_STREAMING' }
+  | { type: 'APPEND_DELTA'; payload: string }
+  | { type: 'SET_TOOL_CALL'; payload: ToolCallStatus }
+  | { type: 'SET_ROUTINE'; payload: RoutinePayload }
+  | { type: 'SET_CHIPS'; payload: string[] }
+  | { type: 'FINISH_STREAMING' }
+  | { type: 'SET_ERROR'; payload: string }
+  | { type: 'LOAD_HISTORY'; payload: ChatMessage[] }
+  | { type: 'RESET' };
+
+function chatReducer(state: ChatState, action: ChatAction): ChatState {
+  switch (action.type) {
+    case 'ADD_USER_MESSAGE':
+      return {
+        ...state,
+        messages: [...state.messages, action.payload],
+        chips: [],
+        error: null,
+      };
+
+    case 'START_STREAMING': {
+      const streamingMsg: ChatMessage = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: '',
+        timestamp: new Date().toISOString(),
+        toolCalls: [],
+        routine: null,
+        isStreaming: true,
+      };
+      return {
+        ...state,
+        isStreaming: true,
+        messages: [...state.messages, streamingMsg],
+        currentToolCalls: [],
+        currentRoutine: null,
+        error: null,
+      };
+    }
+
+    case 'APPEND_DELTA': {
+      const msgs = [...state.messages];
+      const last = msgs[msgs.length - 1];
+      if (last && last.role === 'assistant') {
+        msgs[msgs.length - 1] = {
+          ...last,
+          content: last.content + action.payload,
+        };
+      }
+      return { ...state, messages: msgs };
+    }
+
+    case 'SET_TOOL_CALL': {
+      const updated = [...state.currentToolCalls];
+      const existingIdx = updated.findIndex(
+        (tc) => tc.toolName === action.payload.toolName
+      );
+      if (existingIdx >= 0) {
+        updated[existingIdx] = action.payload;
+      } else {
+        updated.push(action.payload);
+      }
+
+      // Also update the last assistant message
+      const msgs = [...state.messages];
+      const last = msgs[msgs.length - 1];
+      if (last && last.role === 'assistant') {
+        msgs[msgs.length - 1] = { ...last, toolCalls: [...updated] };
+      }
+
+      return { ...state, currentToolCalls: updated, messages: msgs };
+    }
+
+    case 'SET_ROUTINE': {
+      const msgs = [...state.messages];
+      const last = msgs[msgs.length - 1];
+      if (last && last.role === 'assistant') {
+        msgs[msgs.length - 1] = { ...last, routine: action.payload };
+      }
+      return { ...state, currentRoutine: action.payload, messages: msgs };
+    }
+
+    case 'SET_CHIPS':
+      return { ...state, chips: action.payload };
+
+    case 'FINISH_STREAMING': {
+      const msgs = [...state.messages];
+      const last = msgs[msgs.length - 1];
+      if (last && last.role === 'assistant') {
+        msgs[msgs.length - 1] = { ...last, isStreaming: false };
+      }
+      return { ...state, isStreaming: false, messages: msgs };
+    }
+
+    case 'SET_ERROR': {
+      const msgs = [...state.messages];
+      const last = msgs[msgs.length - 1];
+      if (last && last.role === 'assistant') {
+        msgs[msgs.length - 1] = {
+          ...last,
+          content: last.content || action.payload,
+          isStreaming: false,
+        };
+      }
+      return {
+        ...state,
+        isStreaming: false,
+        error: action.payload,
+        messages: msgs,
+      };
+    }
+
+    case 'LOAD_HISTORY':
+      return { ...state, messages: action.payload };
+
+    case 'RESET':
+      return initialChatState;
+
+    default:
+      return state;
+  }
+}
+
+const initialChatState: ChatState = {
+  messages: [],
+  isStreaming: false,
+  chips: [],
+  error: null,
+  currentToolCalls: [],
+  currentRoutine: null,
+};
+
+// ─── SSE Parser ──────────────────────────────────────────────
+
+async function parseSSEStream(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  dispatch: React.Dispatch<ChatAction>
+): Promise<void> {
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data: ')) continue;
+
+      const jsonStr = trimmed.slice(6);
+      let event: SSEEvent;
+      try {
+        event = JSON.parse(jsonStr) as SSEEvent;
+      } catch {
+        continue;
+      }
+
+      switch (event.type) {
+        case 'text_delta':
+          dispatch({ type: 'APPEND_DELTA', payload: event.content });
+          break;
+        case 'tool_call':
+          dispatch({
+            type: 'SET_TOOL_CALL',
+            payload: { toolName: event.tool_name, status: event.status },
+          });
+          break;
+        case 'structured_routine':
+          dispatch({ type: 'SET_ROUTINE', payload: event.payload });
+          break;
+        case 'suggestion_chips':
+          dispatch({ type: 'SET_CHIPS', payload: event.chips });
+          break;
+        case 'done':
+          dispatch({ type: 'FINISH_STREAMING' });
+          break;
+        case 'error':
+          dispatch({ type: 'SET_ERROR', payload: event.message });
+          break;
+      }
+    }
+  }
+}
+
+// ─── ChatPage Component ─────────────────────────────────────
 
 const ChatPage: React.FC = () => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 0, sender: 'bot', timestamp: new Date(),
-      text: "Hello! 👋 I'm your AI Dermatology Assistant. I can help you with:\n\n🔬 Skin conditions — acne, eczema, melanoma, psoriasis, and more\n💊 Treatments — treatment options for various conditions\n🧴 Skincare routines — personalized guidance\n🧪 Ingredient safety — check if ingredients are safe\n👨‍⚕️ When to see a doctor\n\nAsk me anything about skin health!"
-    }
-  ]);
-  const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [state, dispatch] = useReducer(chatReducer, initialChatState);
+  const [inputValue, setInputValue] = useState('');
+  const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const {
+    sessions: localSessions,
+    activeSessionId,
+    addSession,
+    removeSession,
+    incrementMessageCount,
+  } = useChatStore();
+
+  // Ensure we always have a session
+  const sessionIdRef = useRef<string>(activeSessionId ?? generateSessionId());
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  const handleSend = async (text?: string) => {
-    const msg = text || input.trim();
-    if (!msg || loading) return;
-
-    const userMsg: Message = { id: Date.now(), text: msg, sender: 'user', timestamp: new Date() };
-    setMessages(prev => [...prev, userMsg]);
-    setInput('');
-    setLoading(true);
-
-    try {
-      const res = await sendChatMessage(msg);
-      const botMsg: Message = { id: Date.now() + 1, text: res.response, sender: 'bot', timestamp: new Date() };
-      setMessages(prev => [...prev, botMsg]);
-    } catch {
-      const errMsg: Message = { id: Date.now() + 1, text: "Sorry, I couldn't process that request. Please try again.", sender: 'bot', timestamp: new Date() };
-      setMessages(prev => [...prev, errMsg]);
+    if (!activeSessionId) {
+      const newId = generateSessionId();
+      sessionIdRef.current = newId;
+      addSession({
+        id: newId,
+        title: 'New Conversation',
+        createdAt: new Date().toISOString(),
+        messageCount: 0,
+      });
+    } else {
+      sessionIdRef.current = activeSessionId;
     }
-    setLoading(false);
-  };
+  }, [activeSessionId, addSession]);
 
-  // Simple markdown-like rendering
-  const renderText = (text: string) => {
-    return text.split('\n').map((line, i) => {
-      if (!line.trim()) return <br key={i} />;
-      let processed = line
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        .replace(/^- (.*)$/, '• $1')
-        .replace(/^(\d+)\. (.*)$/, '$1. $2');
-      return <div key={i} dangerouslySetInnerHTML={{ __html: processed }} />;
+  // ─── React Query: Fetch history on session load (FIX 5) ───
+
+  const { data: history } = useQuery({
+    queryKey: ['chat-history', activeSessionId],
+    queryFn: () => {
+      const token = getAuthToken();
+      return fetch(`${API_BASE}/api/chat/history/${activeSessionId}`, {
+        headers: { Authorization: `Bearer ${token ?? ''}` },
+      }).then((r) => r.json());
+    },
+    enabled: !!activeSessionId,
+    staleTime: Infinity,
+  });
+
+  // Seed useReducer message state with resolved history
+  const historyLoadedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      history &&
+      Array.isArray(history) &&
+      activeSessionId &&
+      historyLoadedRef.current !== activeSessionId
+    ) {
+      historyLoadedRef.current = activeSessionId;
+      const msgs: ChatMessage[] = history
+        .filter((m: { role: string }) => m.role !== 'system')
+        .map((m: { role: string; content: string }, i: number) => ({
+          id: `history-${i}`,
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+          timestamp: new Date().toISOString(),
+        }));
+      if (msgs.length > 0) {
+        dispatch({ type: 'LOAD_HISTORY', payload: msgs });
+      }
+    }
+  }, [history, activeSessionId]);
+
+  // ─── React Query: Fetch sessions list (FIX 5) ────────────
+
+  const { data: serverSessions } = useQuery<string[]>({
+    queryKey: ['chat-sessions'],
+    queryFn: () => {
+      const token = getAuthToken();
+      return fetch(`${API_BASE}/api/chat/sessions`, {
+        headers: { Authorization: `Bearer ${token ?? ''}` },
+      }).then((r) => r.json());
+    },
+    staleTime: 30000,
+  });
+
+  // Merge server sessions with local sessions
+  const sessions = localSessions.length > 0 ? localSessions : (serverSessions ?? []).map((id: string) => ({
+    id,
+    title: 'Conversation',
+    createdAt: '',
+    messageCount: 0,
+  }));
+
+  // ─── Send message ────────────────────────────────────────
+
+  const sendMessage = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed || state.isStreaming) return;
+
+      const token = getAuthToken();
+      if (!token) {
+        dispatch({
+          type: 'SET_ERROR',
+          payload: 'Please log in to use the AI assistant.',
+        });
+        return;
+      }
+
+      const sessionId = sessionIdRef.current;
+
+      // Optimistic UI — add user message immediately
+      const userMsg: ChatMessage = {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        content: trimmed,
+        timestamp: new Date().toISOString(),
+      };
+      dispatch({ type: 'ADD_USER_MESSAGE', payload: userMsg });
+      dispatch({ type: 'START_STREAMING' });
+      incrementMessageCount(sessionId);
+      setInputValue('');
+
+      // Build request body
+      const body: Record<string, unknown> = {
+        session_id: sessionId,
+        message: trimmed,
+      };
+      if (location) {
+        body.location = { lat: location.lat, lon: location.lon };
+      }
+
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      try {
+        const resp = await fetch(`${API_BASE}/api/chat/message`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+
+        if (resp.status === 429) {
+          dispatch({
+            type: 'SET_ERROR',
+            payload: 'You\'re sending messages too quickly. Please wait a moment.',
+          });
+          return;
+        }
+
+        if (!resp.ok) {
+          dispatch({
+            type: 'SET_ERROR',
+            payload: 'Failed to connect to the AI assistant. Please try again.',
+          });
+          return;
+        }
+
+        if (!resp.body) {
+          dispatch({ type: 'SET_ERROR', payload: 'No response received.' });
+          return;
+        }
+
+        const reader = resp.body.getReader();
+        await parseSSEStream(reader, dispatch);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          dispatch({ type: 'FINISH_STREAMING' });
+        } else {
+          dispatch({
+            type: 'SET_ERROR',
+            payload: 'Connection lost. Please try again.',
+          });
+        }
+      } finally {
+        abortRef.current = null;
+      }
+    },
+    [state.isStreaming, location, incrementMessageCount]
+  );
+
+  // ─── Handlers ────────────────────────────────────────────
+
+  const handleSubmit = useCallback(() => {
+    sendMessage(inputValue);
+  }, [inputValue, sendMessage]);
+
+  const handleChipClick = useCallback(
+    (text: string) => {
+      sendMessage(text);
+    },
+    [sendMessage]
+  );
+
+  const handleNewChat = useCallback(() => {
+    if (abortRef.current) abortRef.current.abort();
+    dispatch({ type: 'RESET' });
+    const newId = generateSessionId();
+    sessionIdRef.current = newId;
+    addSession({
+      id: newId,
+      title: 'New Conversation',
+      createdAt: new Date().toISOString(),
+      messageCount: 0,
     });
-  };
+  }, [addSession]);
+
+  const handleClearChat = useCallback(async () => {
+    if (abortRef.current) abortRef.current.abort();
+    const sessionId = sessionIdRef.current;
+    dispatch({ type: 'RESET' });
+
+    const token = getAuthToken();
+    if (token) {
+      try {
+        await fetch(`${API_BASE}/api/chat/session/${sessionId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch {
+        // Silent fail — session cleanup is best-effort
+      }
+    }
+    removeSession(sessionId);
+    handleNewChat();
+  }, [removeSession, handleNewChat]);
+
+  const handleAttachLocation = useCallback(() => {
+    if (location) {
+      setLocation(null);
+      return;
+    }
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setLocation({
+            lat: pos.coords.latitude,
+            lon: pos.coords.longitude,
+          });
+        },
+        () => {
+          console.warn('Geolocation permission denied');
+        }
+      );
+    }
+  }, [location]);
+
+  const handleAttachImage = useCallback(() => {
+    // Image attachment is handled via the existing analysis flow.
+    // For now we show a message directing users to the Analyze page.
+    const infoMsg: ChatMessage = {
+      id: `system-${Date.now()}`,
+      role: 'assistant',
+      content:
+        '📷 To analyze a skin image, please use the **Analyze** page first. Once your image is analyzed, you can reference it here and I\'ll factor in the results!',
+      timestamp: new Date().toISOString(),
+    };
+    dispatch({ type: 'ADD_USER_MESSAGE', payload: infoMsg });
+  }, []);
+
+  // ─── Welcome message on empty state ──────────────────────
+
+  const showWelcome = state.messages.length === 0;
 
   return (
-    <div className="page-container" style={{ paddingBottom: '0' }}>
+    <div className="page-container chat-page" style={{ paddingBottom: '0' }}>
       <div className="chat-container">
-        {/* Header */}
-        <div style={{ textAlign: 'center', paddingBottom: '16px', borderBottom: '1px solid var(--dark-600)' }}>
-          <h1 style={{ color: 'white', fontWeight: 800, fontSize: '1.5rem', marginBottom: '4px' }}>
-            🤖 AI Dermatologist
-          </h1>
-          <p style={{ color: 'var(--dark-200)', fontSize: '0.85rem' }}>
-            Ask questions about skin conditions, treatments, and skincare
-          </p>
-        </div>
+        <ChatHeader
+          sessionTitle={
+            sessions.find((s: { id: string }) => s.id === sessionIdRef.current)?.title ??
+            'New Conversation'
+          }
+          onNewChat={handleNewChat}
+          onClearChat={handleClearChat}
+          isStreaming={state.isStreaming}
+        />
 
-        {/* Quick Questions */}
-        <div style={{ padding: '12px 0', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-          {QUICK_QUESTIONS.map((q, i) => (
-            <button
-              key={i}
-              onClick={() => handleSend(q)}
-              disabled={loading}
-              style={{
-                padding: '6px 14px', borderRadius: '20px', fontSize: '0.8rem',
-                background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)',
-                color: 'var(--primary-300)', cursor: 'pointer', transition: 'all 0.2s',
-                fontWeight: 500,
-              }}
-              onMouseOver={(e) => (e.currentTarget.style.background = 'rgba(99,102,241,0.2)')}
-              onMouseOut={(e) => (e.currentTarget.style.background = 'rgba(99,102,241,0.1)')}
-            >
-              {q}
-            </button>
-          ))}
-        </div>
-
-        {/* Messages */}
-        <div className="chat-messages">
-          {messages.map(msg => (
-            <div key={msg.id} className={`chat-bubble ${msg.sender}`}>
-              {msg.sender === 'bot' ? renderText(msg.text) : msg.text}
+        {showWelcome && (
+          <div className="chat-welcome">
+            <div className="chat-welcome__icon" aria-hidden="true">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="url(#chat-grad)" strokeWidth="1.5" strokeLinecap="round">
+                <defs>
+                  <linearGradient id="chat-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#6366f1" />
+                    <stop offset="100%" stopColor="#06b6d4" />
+                  </linearGradient>
+                </defs>
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" />
+                <path d="M8 12s1.5-4 4-4 4 4 4 4-1.5 4-4 4-4-4-4-4z" />
+              </svg>
             </div>
-          ))}
-          {loading && (
-            <div className="chat-bubble bot" style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--primary-400)', animation: 'pulse-glow 1s infinite' }} />
-              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--primary-400)', animation: 'pulse-glow 1s infinite 0.2s' }} />
-              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--primary-400)', animation: 'pulse-glow 1s infinite 0.4s' }} />
+            <h2 className="chat-welcome__title">Hi, I'm Derm! 👋</h2>
+            <p className="chat-welcome__text">
+              Your AI dermatologist and skincare coach. Ask me about skin conditions,
+              treatments, routines, or share your concerns — I'm here to help.
+            </p>
+            <div className="chat-welcome__starters">
+              {[
+                'What skincare routine should I follow?',
+                'Tell me about treating acne',
+                'Is this mole something to worry about?',
+                'Help me with dry, sensitive skin',
+              ].map((q) => (
+                <button
+                  key={q}
+                  className="chat-welcome__starter"
+                  onClick={() => sendMessage(q)}
+                  disabled={state.isStreaming}
+                  aria-label={`Ask: ${q}`}
+                >
+                  {q}
+                </button>
+              ))}
             </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
+          </div>
+        )}
 
-        {/* Input */}
-        <div className="chat-input-area">
-          <input
-            className="chat-input"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Ask about any skin condition..."
-            disabled={loading}
-            id="chat-input"
-          />
-          <button
-            className="btn-primary"
-            onClick={() => handleSend()}
-            disabled={!input.trim() || loading}
-            style={{ padding: '12px 20px', flexShrink: 0 }}
-            id="chat-send"
-          >
-            Send
-          </button>
-        </div>
+        <MessageList
+          messages={state.messages}
+          isStreaming={state.isStreaming}
+        />
+
+        <SuggestionChips
+          chips={state.chips}
+          onChipClick={handleChipClick}
+          disabled={state.isStreaming}
+        />
+
+        <MessageInputBar
+          value={inputValue}
+          onChange={setInputValue}
+          onSubmit={handleSubmit}
+          onAttachLocation={handleAttachLocation}
+          onAttachImage={handleAttachImage}
+          isStreaming={state.isStreaming}
+          hasLocation={!!location}
+        />
       </div>
     </div>
   );
