@@ -34,7 +34,7 @@ const SuggestionChips: React.FC<SuggestionChipsProps> = ({
             className="suggestion-chip"
             onClick={() => onChipClick(chip)}
             disabled={disabled}
-            aria-label={`Ask: ${chip}`}
+            aria-label={`Suggest: ${chip}`}
             style={{
               animationDelay: `${index * 80}ms`,
             }}
