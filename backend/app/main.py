@@ -3,6 +3,15 @@ SkinCare AI — FastAPI Backend
 Production-grade API for AI skin analysis, dermatology assistant, and skincare recommendations.
 """
 
+from dotenv import load_dotenv
+import os
+
+# Load environment variables
+load_dotenv()
+
+# Get OpenAI key
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
 import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
