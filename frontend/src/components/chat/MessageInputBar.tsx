@@ -58,7 +58,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
           className={`chat-input-area__attach-btn ${hasLocation ? 'chat-input-area__attach-btn--active' : ''}`}
           onClick={onAttachLocation}
           disabled={isStreaming}
-          aria-label={hasLocation ? 'Location attached' : 'Attach your location'}
+          aria-label={hasLocation ? 'Location attached' : 'Share location'}
           title={hasLocation ? 'Location attached' : 'Share location for weather-aware advice'}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -70,7 +70,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
           className="chat-input-area__attach-btn"
           onClick={onAttachImage}
           disabled={isStreaming}
-          aria-label="Attach a skin image"
+          aria-label="Attach image"
           title="Attach image for analysis"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
