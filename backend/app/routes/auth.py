@@ -152,9 +152,11 @@ def verify_token(authorization: Optional[str] = Header(None)) -> dict:
 async def register(data: RegisterRequest):
     """Register a new user."""
     conn = get_db()
+    data.email = data.email.lower().strip()
+    data.username = data.username.strip()
     try:
         # Check if email already exists
-        existing = conn.execute("SELECT id FROM users WHERE email = ?", (data.email,)).fetchone()
+        existing = conn.execute("SELECT id FROM users WHERE LOWER(email) = ?", (data.email,)).fetchone()
         if existing:
             raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -197,9 +199,10 @@ async def register(data: RegisterRequest):
 async def login(data: LoginRequest):
     """Login with email and password."""
     conn = get_db()
+    data.email = data.email.lower().strip()
     try:
         user = conn.execute(
-            "SELECT * FROM users WHERE email = ?", (data.email,)
+            "SELECT * FROM users WHERE LOWER(email) = ?", (data.email,)
         ).fetchone()
 
         if not user:
