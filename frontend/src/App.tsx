@@ -11,8 +11,9 @@ import ProgressTracker from './components/ProgressTracker';
 import AgingPrediction from './components/AgingPrediction';
 import SkinTypeDetection from './components/SkinTypeDetection';
 import AuthProfile from './components/AuthProfile';
+import MedicalPage from './components/MedicalPage';
 
-export type Page = 'landing' | 'analysis' | 'results' | 'dashboard' | 'chat' | 'doctors' | 'recommendations' | 'ingredients' | 'progress' | 'aging' | 'skin-type' | 'profile';
+export type Page = 'landing' | 'analysis' | 'results' | 'dashboard' | 'chat' | 'doctors' | 'recommendations' | 'ingredients' | 'progress' | 'aging' | 'skin-type' | 'profile' | 'medical';
 
 // Shared state for analysis results
 export interface AnalysisResult {
@@ -53,6 +54,7 @@ const App: React.FC = () => {
     { id: 'chat', label: 'AI Chat' },
     { id: 'doctors', label: 'Doctors' },
     { id: 'recommendations', label: 'Skincare' },
+    { id: 'medical', label: 'Medical' },
     { id: 'ingredients', label: 'Ingredients' },
     { id: 'progress', label: 'Progress' },
     { id: 'skin-type', label: 'Skin Type' },
@@ -86,6 +88,8 @@ const App: React.FC = () => {
         return <SkinTypeDetection />;
       case 'profile':
         return <AuthProfile />;
+      case 'medical':
+        return <MedicalPage />;
       default:
         return <LandingPage onNavigate={navigate} />;
     }
