@@ -409,6 +409,8 @@ function FilterChip({ label, active, color, onClick }: {
   return (
     <button
       onClick={onClick}
+      aria-label={`Filter by ${label} conditions`}
+      aria-pressed={active}
       style={{
         background: active ? `${color}25` : 'rgba(255,255,255,0.06)',
         color: active ? color : 'rgba(255,255,255,0.5)',
