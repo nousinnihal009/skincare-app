@@ -1,11 +1,7 @@
+// REMEDIATION: Fix 5 + Fix 9 + Fix 15 (partial) applied
 /**
  * ConditionGrid.tsx — Browsable/searchable grid of 18 supported conditions
- *
- * Features:
- *  - Search by name
- *  - Filter by category
- *  - Category-colored cards
- *  - Click → selectCondition → starts wizard
+ * Includes CategoryDModal intercept and "Not sure what I have" CTA.
  */
 
 import { useState, useMemo } from 'react'
@@ -35,7 +31,13 @@ const CATEGORY_BG: Record<ConditionCategory, string> = {
 
 const CATEGORY_ORDER: ConditionCategory[] = ['inflammatory', 'infectious', 'pigmentation', 'high_risk']
 
-export function ConditionGrid() {
+const CATEGORY_D: ConditionKey[] = ['actinic_keratosis', 'melanoma_risk']
+
+interface ConditionGridProps {
+  onNavigate?: (page: any) => void
+}
+
+export function ConditionGrid({ onNavigate }: ConditionGridProps) {
   const conditions = useMedicalStore((s) => s.conditions)
   const conditionsLoading = useMedicalStore((s) => s.conditionsLoading)
   const conditionsError = useMedicalStore((s) => s.conditionsError)
@@ -43,6 +45,10 @@ export function ConditionGrid() {
 
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<ConditionCategory | 'all'>('all')
+
+  // Fix 5: Category D modal state
+  const [categoryDModalOpen, setCategoryDModalOpen] = useState(false)
+  const [pendingCondition, setPendingCondition] = useState<ConditionKey | null>(null)
 
   const filtered = useMemo(() => {
     let list = conditions
@@ -58,6 +64,38 @@ export function ConditionGrid() {
     }
     return list
   }, [conditions, search, categoryFilter])
+
+  // Fix 5: Modified click handler
+  const handleConditionClick = (key: ConditionKey) => {
+    if (CATEGORY_D.includes(key)) {
+      setPendingCondition(key)
+      setCategoryDModalOpen(true)
+    } else {
+      selectCondition(key)
+    }
+  }
+
+  const handleCategoryDConfirm = () => {
+    if (pendingCondition) {
+      selectCondition(pendingCondition)
+      setCategoryDModalOpen(false)
+      setPendingCondition(null)
+    }
+  }
+
+  const handleCategoryDCancel = () => {
+    setCategoryDModalOpen(false)
+    setPendingCondition(null)
+  }
+
+  // Fix 9: "Not sure what I have" handler
+  const handleUnsureClick = () => {
+    if (onNavigate) {
+      // NOTE: App doesn't support prefill message natively via navigation,
+      // but we send the user to the chat page as requested
+      onNavigate('chat')
+    }
+  }
 
   if (conditionsLoading) {
     return (
@@ -87,6 +125,35 @@ export function ConditionGrid() {
 
   return (
     <div>
+      {/* Fix 9: Header with "Not sure" CTA */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+        <div>
+          <h1 style={{ color: '#fff', fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>🩺 Medical Skin Conditions</h1>
+          <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.85rem', marginTop: '0.35rem', marginBottom: 0 }}>
+            Find your condition and get a supportive care protocol built around clinical evidence.
+          </p>
+        </div>
+        <button
+          onClick={handleUnsureClick}
+          aria-label="I'm not sure what condition I have — get help identifying it"
+          style={{
+            flexShrink: 0,
+            padding: '0.5rem 1rem',
+            borderRadius: '12px',
+            border: '1px solid rgba(99,102,241,0.4)',
+            background: 'none',
+            color: '#a5b4fc',
+            fontSize: '0.82rem',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            whiteSpace: 'nowrap',
+            marginLeft: '1rem',
+          }}
+        >
+          🤔 Not sure what I have?
+        </button>
+      </div>
+
       {/* Search + Filters */}
       <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
         <input
@@ -125,11 +192,15 @@ export function ConditionGrid() {
       </div>
 
       {/* Grid */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-        gap: '1rem',
-      }}>
+      <div
+        role="list"
+        aria-label="Available medical skin conditions"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+          gap: '1rem',
+        }}
+      >
         {filtered.map((c) => {
           const key = c.key as ConditionKey
           const cat = c.category as ConditionCategory
@@ -138,7 +209,9 @@ export function ConditionGrid() {
           return (
             <button
               key={key}
-              onClick={() => selectCondition(key)}
+              role="listitem"
+              aria-label={`${c.display_name} — ${CONDITION_DESCRIPTORS[key]}`}
+              onClick={() => handleConditionClick(key)}
               style={{
                 background: CATEGORY_BG[cat],
                 border: `1px solid ${CATEGORY_COLORS[cat]}30`,
@@ -187,13 +260,25 @@ export function ConditionGrid() {
                 )}
                 {isHighRisk && (
                   <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
                     background: 'rgba(239,68,68,0.2)',
                     color: '#ef4444',
                     padding: '0.15rem 0.5rem',
                     borderRadius: '6px',
                     fontSize: '0.65rem',
                     fontWeight: 600,
-                  }}>🔴 HIGH RISK</span>
+                  }}>
+                    <span
+                      style={{
+                        width: '6px', height: '6px', borderRadius: '50%',
+                        background: '#ef4444',
+                        animation: 'pulse-dot 2s infinite',
+                      }}
+                      aria-label="High risk condition — immediate medical evaluation recommended"
+                      role="img"
+                    />
+                    HIGH RISK
+                  </span>
                 )}
               </div>
 
@@ -242,6 +327,78 @@ export function ConditionGrid() {
           <p style={{ fontSize: '1.1rem' }}>No conditions match your search</p>
         </div>
       )}
+
+      {/* Fix 5: Category D Modal */}
+      {categoryDModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="category-d-modal-title"
+          style={{
+            position: 'fixed', inset: 0, zIndex: 50,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div style={{
+            background: '#1A1A2E',
+            border: '1px solid rgba(239,68,68,0.5)',
+            borderRadius: '16px',
+            padding: '2rem',
+            boxShadow: '0 25px 50px rgba(0,0,0,0.5)',
+            maxWidth: '28rem',
+            width: '100%',
+            margin: '0 1rem',
+          }}>
+            <h2 id="category-d-modal-title" style={{ color: '#fff', fontWeight: 700, fontSize: '1.1rem', margin: '0 0 0.75rem' }}>
+              ⚠️ Important Notice
+            </h2>
+            <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.85rem', margin: '0 0 0.5rem' }}>
+              This condition may require immediate medical evaluation.
+            </p>
+            <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.85rem', margin: '0 0 1.5rem' }}>
+              The care protocol we provide is supportive information only — it is not a
+              substitute for professional dermatological assessment.
+              Do you wish to continue?
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button
+                onClick={handleCategoryDCancel}
+                aria-label="Cancel and return to condition list"
+                style={{
+                  padding: '0.5rem 1rem', borderRadius: '10px',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'none', color: 'rgba(255,255,255,0.7)',
+                  fontSize: '0.85rem', cursor: 'pointer', transition: 'all 0.2s',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCategoryDConfirm}
+                aria-label="I understand — continue to intake"
+                style={{
+                  padding: '0.5rem 1rem', borderRadius: '10px',
+                  border: 'none',
+                  background: '#dc2626', color: '#fff',
+                  fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+              >
+                I Understand — Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg) } }
+        @keyframes pulse-dot {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+      `}</style>
     </div>
   )
 }
