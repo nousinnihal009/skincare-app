@@ -12,8 +12,13 @@ import { useMedicalStore } from '../store/medicalStore'
 import { ConditionGrid } from './medical/ConditionGrid'
 import { ConditionIntakeWizard } from './medical/ConditionIntakeWizard'
 import { ConditionProtocolDisplay } from './medical/ConditionProtocolDisplay'
+import type { Page } from '../App'
 
-export default function MedicalPage() {
+interface MedicalPageProps {
+  onNavigate?: (page: Page) => void
+}
+
+export default function MedicalPage({ onNavigate }: MedicalPageProps) {
   const wizardStep = useMedicalStore((s) => s.wizardStep)
   const fetchConditions = useMedicalStore((s) => s.fetchConditions)
   const resetAll = useMedicalStore((s) => s.resetAll)
@@ -99,7 +104,7 @@ export default function MedicalPage() {
 
       {/* Content */}
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 1.5rem 3rem' }}>
-        {wizardStep === 0 && <ConditionGrid />}
+        {wizardStep === 0 && <ConditionGrid onNavigate={onNavigate} />}
         {(wizardStep >= 1 && wizardStep <= 3) && <ConditionIntakeWizard />}
         {wizardStep === 4 && <ConditionProtocolDisplay />}
       </div>
