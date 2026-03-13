@@ -1,90 +1,23 @@
+// REMEDIATION: Fix 1 + Fix 2 applied
 /**
- * ConditionIntakeWizard.tsx — 3-step intake questionnaire
+ * ConditionIntakeWizard.tsx — 4-step intake questionnaire (thin orchestrator)
  *
- * Step 1: Severity + Skin Type + Age Group
- * Step 2: Affected Areas + Duration + Triggers
- * Step 3: Current Treatments + Location Consent → Submit
+ * Step 1: Severity + Skin Type (IntakeStep1)
+ * Step 2: Affected Areas + Duration + Triggers (IntakeStep2)
+ * Step 3: Current Treatments (IntakeStep3)
+ * Step 4: Age Group + Location Consent → Submit (IntakeStep4)
  */
 
 import { useMedicalStore } from '../../store/medicalStore'
+import { IntakeStep1 } from './intake/IntakeStep1'
+import { IntakeStep2 } from './intake/IntakeStep2'
+import { IntakeStep3 } from './intake/IntakeStep3'
+import { IntakeStep4 } from './intake/IntakeStep4'
 import {
   CONDITION_ICONS,
   CONDITION_DESCRIPTORS,
 } from '../../constants/conditionMeta'
-import type {
-  ConditionKey,
-  Severity,
-  SkinType,
-  AgeGroup,
-  AffectedArea,
-  SymptomDuration,
-  KnownTrigger,
-  CurrentTreatment,
-} from '../../types/conditions'
-
-const SEVERITY_OPTIONS: { value: Severity; label: string; color: string; desc: string }[] = [
-  { value: 'mild', label: 'Mild', color: '#34d399', desc: 'Occasional, minor symptoms' },
-  { value: 'moderate', label: 'Moderate', color: '#f59e0b', desc: 'Noticeable, regular symptoms' },
-  { value: 'severe', label: 'Severe', color: '#ef4444', desc: 'Significant daily impact' },
-]
-
-const SKIN_TYPES: { value: SkinType; label: string }[] = [
-  { value: 'oily', label: '🫧 Oily' },
-  { value: 'dry', label: '🏜️ Dry' },
-  { value: 'combination', label: '⚖️ Combo' },
-  { value: 'sensitive', label: '🌸 Sensitive' },
-  { value: 'normal', label: '✨ Normal' },
-]
-
-const AGE_GROUPS: { value: AgeGroup; label: string }[] = [
-  { value: 'teen', label: 'Under 20' },
-  { value: 'twenties', label: '20–29' },
-  { value: 'thirties', label: '30–39' },
-  { value: 'forties_plus', label: '40+' },
-]
-
-const AREAS: { value: AffectedArea; label: string }[] = [
-  { value: 'face', label: '😊 Face' },
-  { value: 'scalp', label: '💇 Scalp' },
-  { value: 'neck', label: 'Neck' },
-  { value: 'chest', label: 'Chest' },
-  { value: 'back', label: 'Back' },
-  { value: 'arms', label: '💪 Arms' },
-  { value: 'legs', label: '🦵 Legs' },
-  { value: 'hands', label: '🤚 Hands' },
-  { value: 'feet', label: '🦶 Feet' },
-  { value: 'widespread', label: '🔄 Widespread' },
-]
-
-const DURATIONS: { value: SymptomDuration; label: string }[] = [
-  { value: 'less_than_1_week', label: '< 1 week' },
-  { value: '1_to_4_weeks', label: '1–4 weeks' },
-  { value: '1_to_6_months', label: '1–6 months' },
-  { value: 'more_than_6_months', label: '6+ months' },
-  { value: 'chronic_recurring', label: 'Chronic / recurring' },
-]
-
-const TRIGGERS: { value: KnownTrigger; label: string }[] = [
-  { value: 'stress', label: '😰 Stress' },
-  { value: 'diet', label: '🍕 Diet' },
-  { value: 'heat', label: '🔥 Heat' },
-  { value: 'cold', label: '❄️ Cold' },
-  { value: 'sun_exposure', label: '☀️ Sun' },
-  { value: 'sweat', label: '💦 Sweat' },
-  { value: 'specific_products', label: '🧴 Products' },
-  { value: 'hormonal', label: '🔄 Hormonal' },
-  { value: 'unknown', label: '❓ Unknown' },
-  { value: 'none', label: '✅ None' },
-]
-
-const TREATMENTS: { value: CurrentTreatment; label: string }[] = [
-  { value: 'prescription_topical', label: '💊 Rx Topical' },
-  { value: 'prescription_oral', label: '💉 Rx Oral' },
-  { value: 'otc_topical', label: '🧴 OTC Topical' },
-  { value: 'phototherapy', label: '💡 Phototherapy' },
-  { value: 'biologics', label: '🧬 Biologics' },
-  { value: 'none', label: '❌ None' },
-]
+import type { ConditionKey } from '../../types/conditions'
 
 export function ConditionIntakeWizard() {
   const wizardStep = useMedicalStore((s) => s.wizardStep)
@@ -92,23 +25,9 @@ export function ConditionIntakeWizard() {
   const selectedCondition = useMedicalStore((s) => s.selectedCondition)
   const clearSelection = useMedicalStore((s) => s.clearSelection)
 
-  // Form state
-  const severity = useMedicalStore((s) => s.severity)
-  const setSeverity = useMedicalStore((s) => s.setSeverity)
-  const skinType = useMedicalStore((s) => s.skinType)
-  const setSkinType = useMedicalStore((s) => s.setSkinType)
-  const ageGroup = useMedicalStore((s) => s.ageGroup)
-  const setAgeGroup = useMedicalStore((s) => s.setAgeGroup)
+  // Only what the orchestrator needs for validation gates
   const affectedAreas = useMedicalStore((s) => s.affectedAreas)
-  const setAffectedAreas = useMedicalStore((s) => s.setAffectedAreas)
-  const symptomDuration = useMedicalStore((s) => s.symptomDuration)
-  const setSymptomDuration = useMedicalStore((s) => s.setSymptomDuration)
-  const knownTriggers = useMedicalStore((s) => s.knownTriggers)
-  const setKnownTriggers = useMedicalStore((s) => s.setKnownTriggers)
   const currentTreatments = useMedicalStore((s) => s.currentTreatments)
-  const setCurrentTreatments = useMedicalStore((s) => s.setCurrentTreatments)
-  const locationConsent = useMedicalStore((s) => s.locationConsent)
-  const setLocationConsent = useMedicalStore((s) => s.setLocationConsent)
   const protocolLoading = useMedicalStore((s) => s.protocolLoading)
   const protocolError = useMedicalStore((s) => s.protocolError)
   const generateProtocol = useMedicalStore((s) => s.generateProtocol)
@@ -116,18 +35,21 @@ export function ConditionIntakeWizard() {
   if (!selectedCondition) return null
   const key = selectedCondition as ConditionKey
 
-  const toggleArray = <T extends string>(arr: T[], val: T, setter: (v: T[]) => void) => {
-    setter(arr.includes(val) ? arr.filter((v) => v !== val) : [...arr, val])
-  }
-
   const canProceedStep2 = affectedAreas.length > 0
-  const canSubmit = currentTreatments.length > 0
+  const canProceedStep3 = currentTreatments.length > 0
+
+  const STEP_LABELS: Record<number, string> = {
+    1: 'Basic Info',
+    2: 'Symptoms',
+    3: 'Treatments',
+    4: 'Profile & Location',
+  }
 
   return (
     <div>
       {/* Progress Bar */}
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
-        {[1, 2, 3].map((i) => (
+        {[1, 2, 3, 4].map((i) => (
           <div key={i} style={{
             flex: 1, height: '4px',
             borderRadius: '2px',
@@ -156,7 +78,7 @@ export function ConditionIntakeWizard() {
               {CONDITION_DESCRIPTORS[key] ? key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : key}
             </h2>
             <p style={{ color: 'rgba(255,255,255,0.4)', margin: 0, fontSize: '0.78rem' }}>
-              Step {wizardStep} of 3 — {wizardStep === 1 ? 'Basic Info' : wizardStep === 2 ? 'Symptoms' : 'Treatments'}
+              Step {wizardStep} of 4 — {STEP_LABELS[wizardStep as number] || ''}
             </p>
           </div>
         </div>
@@ -171,60 +93,18 @@ export function ConditionIntakeWizard() {
         </button>
       </div>
 
-      {/* Step 1: Severity + Skin Type + Age */}
+      {/* Step 1 */}
       {wizardStep === 1 && (
         <div>
-          <Section title="How severe are your symptoms?">
-            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-              {SEVERITY_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setSeverity(opt.value)}
-                  style={{
-                    flex: '1 1 140px',
-                    background: severity === opt.value ? `${opt.color}18` : 'rgba(255,255,255,0.04)',
-                    border: `2px solid ${severity === opt.value ? opt.color : 'rgba(255,255,255,0.1)'}`,
-                    borderRadius: '12px',
-                    padding: '1rem',
-                    cursor: 'pointer',
-                    textAlign: 'center',
-                    transition: 'all 0.2s',
-                  }}
-                >
-                  <div style={{ color: opt.color, fontWeight: 600, fontSize: '0.95rem' }}>{opt.label}</div>
-                  <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.72rem', marginTop: '0.25rem' }}>{opt.desc}</div>
-                </button>
-              ))}
-            </div>
-          </Section>
-
-          <Section title="Your skin type">
-            <ChipGroup options={SKIN_TYPES} selected={skinType} onSelect={(v) => setSkinType(v as SkinType)} />
-          </Section>
-
-          <Section title="Age group">
-            <ChipGroup options={AGE_GROUPS} selected={ageGroup} onSelect={(v) => setAgeGroup(v as AgeGroup)} />
-          </Section>
-
+          <IntakeStep1 />
           <NavButtons onNext={() => setWizardStep(2)} />
         </div>
       )}
 
-      {/* Step 2: Areas + Duration + Triggers */}
+      {/* Step 2 */}
       {wizardStep === 2 && (
         <div>
-          <Section title="Affected areas (select all that apply)">
-            <MultiChipGroup options={AREAS} selected={affectedAreas} onToggle={(v) => toggleArray(affectedAreas, v as AffectedArea, setAffectedAreas)} />
-          </Section>
-
-          <Section title="How long have you had symptoms?">
-            <ChipGroup options={DURATIONS} selected={symptomDuration} onSelect={(v) => setSymptomDuration(v as SymptomDuration)} />
-          </Section>
-
-          <Section title="Known triggers (select all that apply)">
-            <MultiChipGroup options={TRIGGERS} selected={knownTriggers} onToggle={(v) => toggleArray(knownTriggers, v as KnownTrigger, setKnownTriggers)} />
-          </Section>
-
+          <IntakeStep2 />
           <NavButtons
             onBack={() => setWizardStep(1)}
             onNext={() => setWizardStep(3)}
@@ -233,35 +113,22 @@ export function ConditionIntakeWizard() {
         </div>
       )}
 
-      {/* Step 3: Treatments + Location + Submit */}
+      {/* Step 3 */}
       {wizardStep === 3 && (
         <div>
-          <Section title="Current treatments (select all that apply)">
-            <MultiChipGroup options={TREATMENTS} selected={currentTreatments} onToggle={(v) => toggleArray(currentTreatments, v as CurrentTreatment, setCurrentTreatments)} />
-          </Section>
+          <IntakeStep3 />
+          <NavButtons
+            onBack={() => setWizardStep(2)}
+            onNext={() => setWizardStep(4 as any)}
+            nextDisabled={!canProceedStep3}
+          />
+        </div>
+      )}
 
-          <Section title="Weather-adjusted recommendations">
-            <label style={{
-              display: 'flex', alignItems: 'center', gap: '0.75rem',
-              background: 'rgba(255,255,255,0.04)', borderRadius: '10px',
-              padding: '0.85rem 1rem', cursor: 'pointer',
-            }}>
-              <input
-                type="checkbox"
-                checked={locationConsent}
-                onChange={(e) => setLocationConsent(e.target.checked)}
-                style={{ width: '18px', height: '18px', accentColor: '#6366f1' }}
-              />
-              <div>
-                <div style={{ color: '#fff', fontSize: '0.85rem', fontWeight: 500 }}>
-                  Share my location for weather-adjusted advice
-                </div>
-                <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.72rem' }}>
-                  Used once for temperature/humidity/UV data. Not stored.
-                </div>
-              </div>
-            </label>
-          </Section>
+      {/* Step 4 */}
+      {wizardStep === 4 && (
+        <div>
+          <IntakeStep4 />
 
           {protocolError && (
             <div style={{
@@ -274,10 +141,10 @@ export function ConditionIntakeWizard() {
           )}
 
           <NavButtons
-            onBack={() => setWizardStep(2)}
+            onBack={() => setWizardStep(3)}
             submitLabel={protocolLoading ? 'Generating Protocol…' : 'Generate My Protocol'}
             onSubmit={generateProtocol}
-            submitDisabled={!canSubmit || protocolLoading}
+            submitDisabled={protocolLoading}
           />
         </div>
       )}
@@ -285,81 +152,7 @@ export function ConditionIntakeWizard() {
   )
 }
 
-// ── Reusable Sub-Components ──────────────────────────────
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={{ marginBottom: '1.5rem' }}>
-      <h3 style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.75rem' }}>
-        {title}
-      </h3>
-      {children}
-    </div>
-  )
-}
-
-function ChipGroup({ options, selected, onSelect }: {
-  options: { value: string; label: string }[]
-  selected: string
-  onSelect: (v: string) => void
-}) {
-  return (
-    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          onClick={() => onSelect(opt.value)}
-          style={{
-            background: selected === opt.value ? 'rgba(99,102,241,0.2)' : 'rgba(255,255,255,0.04)',
-            border: `1px solid ${selected === opt.value ? 'rgba(99,102,241,0.5)' : 'rgba(255,255,255,0.1)'}`,
-            color: selected === opt.value ? '#a5b4fc' : 'rgba(255,255,255,0.6)',
-            borderRadius: '8px',
-            padding: '0.5rem 0.85rem',
-            fontSize: '0.82rem',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            fontWeight: selected === opt.value ? 600 : 400,
-          }}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function MultiChipGroup({ options, selected, onToggle }: {
-  options: { value: string; label: string }[]
-  selected: string[]
-  onToggle: (v: string) => void
-}) {
-  return (
-    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-      {options.map((opt) => {
-        const isActive = selected.includes(opt.value)
-        return (
-          <button
-            key={opt.value}
-            onClick={() => onToggle(opt.value)}
-            style={{
-              background: isActive ? 'rgba(99,102,241,0.2)' : 'rgba(255,255,255,0.04)',
-              border: `1px solid ${isActive ? 'rgba(99,102,241,0.5)' : 'rgba(255,255,255,0.1)'}`,
-              color: isActive ? '#a5b4fc' : 'rgba(255,255,255,0.6)',
-              borderRadius: '8px',
-              padding: '0.5rem 0.85rem',
-              fontSize: '0.82rem',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              fontWeight: isActive ? 600 : 400,
-            }}
-          >
-            {opt.label}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
+// ── Navigation Buttons (kept in orchestrator) ────────────
 
 function NavButtons({ onBack, onNext, onSubmit, submitLabel, nextDisabled, submitDisabled }: {
   onBack?: () => void
