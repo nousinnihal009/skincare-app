@@ -18,9 +18,10 @@ const TREATMENTS: { value: CurrentTreatment; label: string }[] = [
 export function IntakeStep3() {
   const currentTreatments = useMedicalStore((s) => s.currentTreatments)
   const setCurrentTreatments = useMedicalStore((s) => s.setCurrentTreatments)
+  const selectedCondition = useMedicalStore((s) => s.selectedCondition)
 
-  const toggleTreatment = (val: string) => {
-    const v = val as CurrentTreatment
+  const toggleTreatment = (id: string) => { // Changed 'val' to 'id'
+    const v = id as CurrentTreatment // Changed 'val' to 'id'
     setCurrentTreatments(
       currentTreatments.includes(v)
         ? currentTreatments.filter((t) => t !== v)
@@ -59,6 +60,28 @@ export function IntakeStep3() {
           })}
         </div>
       </div>
+
+      {/* Fix 11: Perioral Dermatitis + Steroid warning */}
+      {selectedCondition === 'perioral_dermatitis' && currentTreatments.includes('prescription_topical') && (
+        <div style={{
+          marginTop: '1.5rem',
+          padding: '1rem',
+          background: 'rgba(239,68,68,0.15)',
+          border: '1px solid rgba(239,68,68,0.3)',
+          borderRadius: '10px',
+          color: '#fca5a5',
+          fontSize: '0.85rem',
+          display: 'flex',
+          gap: '0.75rem',
+          alignItems: 'flex-start',
+        }}>
+          <span style={{ fontSize: '1.2rem' }}>⚠️</span>
+          <div>
+            <strong style={{ display: 'block', color: '#ef4444', marginBottom: '0.25rem' }}>Important: Topical Steroids</strong>
+            If your prescription topical is a steroid (like hydrocortisone), be aware that topical steroids can trigger or significantly worsen perioral dermatitis. Discuss non-steroidal alternatives with your doctor.
+          </div>
+        </div>
+      )}
     </div>
   )
 }
