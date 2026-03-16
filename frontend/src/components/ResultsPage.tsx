@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { generatePDFReport } from '../api';
 import type { AnalysisResult, Page } from '../App';
+import SkinMetricsPanel from './analyze/SkinMetricsPanel';
 
 interface Props {
   result: AnalysisResult | null;
@@ -23,8 +24,17 @@ const ResultsPage: React.FC<Props> = ({ result, uploadedImageUrl, onNavigate }) 
 
   const { prediction, top3, risk_assessment, condition_info, treatments, gradcam_heatmap, confidence_distribution, urgent_warning, disclaimer } = result;
 
+  // New pipeline fields (optional — backward compat)
+  const skinMetrics         = result.skin_metrics ?? [];
+  const assessmentParagraph = result.assessment_paragraph ?? '';
+  const visibleFeatures     = result.visible_features ?? [];
+  const referToDerm         = result.refer_to_dermatologist ?? false;
+  const llmEnriched         = result.llm_enriched ?? false;
+  const llmOverrode         = result.llm_overrode_resnet ?? false;
+
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState('');
+  const [referralMinimized, setReferralMinimized] = useState(false);
 
   const handleDownloadPDF = async () => {
     setPdfLoading(true);
@@ -91,6 +101,63 @@ const ResultsPage: React.FC<Props> = ({ result, uploadedImageUrl, onNavigate }) 
         </div>
       )}
 
+      {/* ── Assessment Paragraph (NEW — above Grad-CAM) ───────── */}
+      {assessmentParagraph && (
+        <div className="animate-fade-in-up stagger-1" style={{
+          background: 'rgba(26,26,46,0.8)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          backdropFilter: 'blur(12px)',
+          borderRadius: '20px',
+          padding: '24px',
+          marginBottom: '24px',
+        }} id="assessment-card">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+            <h3 style={{ color: 'white', fontWeight: 700, fontSize: '1.1rem', margin: 0 }}>
+              🔬 Skin Assessment
+            </h3>
+            {llmOverrode && (
+              <span style={{
+                color: 'rgba(108,99,255,0.9)',
+                fontSize: '0.7rem',
+                fontWeight: 600,
+                background: 'rgba(108,99,255,0.1)',
+                padding: '2px 8px',
+                borderRadius: '8px',
+              }}>
+                ✨ AI-Enhanced Analysis
+              </span>
+            )}
+          </div>
+          <p style={{ color: 'var(--dark-200)', lineHeight: 1.8, fontSize: '0.95rem' }}>
+            {assessmentParagraph}
+          </p>
+
+          {/* LLM unavailable note */}
+          {!llmEnriched && (
+            <p className="text-white/40 text-xs mt-3">
+              Note: Enhanced analysis unavailable — showing standard assessment.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Visible Features Chips */}
+      {visibleFeatures.length > 0 && (
+        <div className="mt-3" style={{ marginBottom: '24px' }}>
+          <p className="text-white/50 text-xs mb-2">Observed features:</p>
+          <div className="flex flex-wrap gap-2">
+            {visibleFeatures.map((feature, i) => (
+              <span
+                key={i}
+                className="bg-muted border border-white/10 text-white/70 text-xs px-3 py-1 rounded-full"
+              >
+                {feature}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Main Result Card */}
       <div className="glass-card animate-fade-in-up stagger-1" style={{ marginBottom: '24px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px', alignItems: 'start' }}>
@@ -106,6 +173,12 @@ const ResultsPage: React.FC<Props> = ({ result, uploadedImageUrl, onNavigate }) 
               <span className={`badge ${riskBadgeClass}`}>{risk_assessment.label}</span>
               <span className="badge badge-purple" style={{ marginLeft: '8px' }}>{prediction.category}</span>
             </div>
+
+            {/* Medical disclaimer below condition label */}
+            <p className="text-white/50 text-xs mt-2">
+              This analysis is for informational purposes only and does not constitute a medical
+              diagnosis. Always consult a qualified dermatologist for skin health concerns.
+            </p>
 
             <div style={{ marginBottom: '24px' }}>
               <p style={{ color: 'var(--dark-200)', fontSize: '0.85rem', marginBottom: '8px', fontWeight: 600 }}>
@@ -158,6 +231,60 @@ const ResultsPage: React.FC<Props> = ({ result, uploadedImageUrl, onNavigate }) 
           </div>
         </div>
       </div>
+
+      {/* ── Skin Metrics Panel (NEW — below Grad-CAM) ─────────── */}
+      {skinMetrics.length > 0 && (
+        <div className="animate-fade-in-up stagger-2" style={{ marginBottom: '24px' }}>
+          <SkinMetricsPanel metrics={skinMetrics} />
+        </div>
+      )}
+
+      {/* ── Referral Banner (NEW) ─────────────────────────────── */}
+      {referToDerm && (
+        <div style={{
+          background: 'rgba(120,53,15,0.6)',
+          border: '1px solid rgba(245,158,11,0.5)',
+          borderRadius: '16px',
+          padding: referralMinimized ? '12px 20px' : '20px 24px',
+          marginBottom: '24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          transition: 'padding 0.3s ease',
+        }} id="referral-banner">
+          {referralMinimized ? (
+            <p style={{ color: '#fbbf24', fontSize: '0.85rem', fontWeight: 600, margin: 0 }}>
+              ⚠️ Dermatologist consultation recommended
+            </p>
+          ) : (
+            <div style={{ flex: 1 }}>
+              <p style={{ color: '#fbbf24', fontSize: '1rem', fontWeight: 700, marginBottom: '4px' }}>
+                ⚠️ Professional Evaluation Recommended
+              </p>
+              <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.88rem', lineHeight: 1.6 }}>
+                For accurate evaluation of this condition, we recommend consulting a dermatologist.
+              </p>
+            </div>
+          )}
+          <button
+            onClick={() => setReferralMinimized(!referralMinimized)}
+            style={{
+              background: 'transparent',
+              border: '1px solid rgba(245,158,11,0.3)',
+              color: '#fbbf24',
+              borderRadius: '8px',
+              padding: '4px 10px',
+              fontSize: '0.75rem',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+            aria-label={referralMinimized ? 'Expand referral banner' : 'Minimize referral banner'}
+          >
+            {referralMinimized ? '▼' : '▲'}
+          </button>
+        </div>
+      )}
 
       {/* Top-3 Predictions */}
       <div className="glass-card animate-fade-in-up stagger-2" style={{ marginBottom: '24px' }}>
