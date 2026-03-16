@@ -16,3 +16,6 @@ PyJWT
 bcrypt
 openai>=1.0.0
 redis>=5.0.0
+opencv-python-headless>=4.9
+scikit-image>=0.22
+python-dotenv
