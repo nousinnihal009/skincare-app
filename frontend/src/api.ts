@@ -14,7 +14,13 @@ async function apiRequest(endpoint: string, options: RequestInit = {}) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || 'API request failed');
+    // Preserve status code and full detail on the error object
+    const error: any = new Error(
+      typeof err.detail === 'string' ? err.detail : err.detail?.user_message || 'API request failed'
+    );
+    error.status = res.status;
+    error.detail = err.detail;
+    throw error;
   }
   return res.json();
 }
