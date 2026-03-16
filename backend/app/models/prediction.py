@@ -5,9 +5,14 @@ ML Inference pipeline for skin condition classification.
 Handles: model loading, image preprocessing, prediction, Grad-CAM heatmap generation.
 """
 
+from __future__ import annotations
+
 import os
 import io
 import base64
+from dataclasses import dataclass, field
+from typing import Optional
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -17,6 +22,26 @@ from PIL import Image
 
 from app.model import build_model
 from app.services.knowledge_base import get_condition_info, RISK_LEVELS
+
+# ─────────────────────────────────────────────────────────────
+# Confidence Gating (Stage 3)
+# ─────────────────────────────────────────────────────────────
+
+CONFIDENCE_THRESHOLD = 0.72       # below this → pass to Stage 4 for arbitration
+AMBIGUITY_MARGIN     = 0.15       # if top-2 predictions within this margin → ambiguous
+
+
+@dataclass
+class ClassifierResult:
+    """Structured output from Stage 3 classification with confidence metadata."""
+    top_prediction:     str                          # condition label
+    top_confidence:     float                        # softmax probability
+    second_prediction:  str                          # runner-up label
+    second_confidence:  float                        # runner-up probability
+    is_confident:       bool                         # top_confidence >= CONFIDENCE_THRESHOLD
+    is_ambiguous:       bool                         # (top - second) < AMBIGUITY_MARGIN
+    all_scores:         dict[str, float] = field(default_factory=dict)
+    grad_cam_base64:    Optional[str] = None         # Grad-CAM overlay (base64 PNG)
 
 # ─────────────────────────────────────────────────────────────
 # Configuration
@@ -338,3 +363,61 @@ def predict_condition(image_bytes) -> dict:
         )
 
     return result
+
+
+# ─────────────────────────────────────────────────────────────
+# Stage 3 — Classify with confidence gating
+# ─────────────────────────────────────────────────────────────
+
+def classify(image_bytes: bytes) -> ClassifierResult:
+    """
+    Stage 3 classifier.  Runs the existing ResNet50 pipeline and returns
+    structured output with confidence-gate flags.
+    Does NOT call Stage 4 — that decision is made by the route layer.
+    """
+    model = get_model()
+
+    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    input_tensor = INFERENCE_TRANSFORM(image).unsqueeze(0).to(DEVICE)
+
+    # Inference
+    with torch.no_grad():
+        outputs = model(input_tensor)
+        probabilities = F.softmax(outputs, dim=1)
+
+    probs = probabilities.squeeze().cpu().numpy()
+
+    # Top-2
+    sorted_indices = probs.argsort()[::-1]
+    top_idx = sorted_indices[0]
+    second_idx = sorted_indices[1]
+
+    top_confidence = float(probs[top_idx])
+    second_confidence = float(probs[second_idx])
+
+    # Grad-CAM
+    gradcam_base64 = None
+    try:
+        gradcam = GradCAM(model)
+        input_for_cam = INFERENCE_TRANSFORM(image).unsqueeze(0).to(DEVICE)
+        cam = gradcam.generate(input_for_cam, class_idx=top_idx)
+        gradcam_base64 = generate_gradcam_overlay(image, cam)
+    except Exception as e:
+        print(f"Grad-CAM generation failed in classify(): {e}")
+
+    # Full distribution (top 5 for compactness)
+    all_scores = {
+        CLASS_NAMES[i]: float(probs[i])
+        for i in sorted_indices[:5]
+    }
+
+    return ClassifierResult(
+        top_prediction=CLASS_NAMES[top_idx],
+        top_confidence=top_confidence,
+        second_prediction=CLASS_NAMES[second_idx],
+        second_confidence=second_confidence,
+        is_confident=top_confidence >= CONFIDENCE_THRESHOLD,
+        is_ambiguous=(top_confidence - second_confidence) < AMBIGUITY_MARGIN,
+        all_scores=all_scores,
+        grad_cam_base64=gradcam_base64,
+    )
