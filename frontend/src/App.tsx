@@ -16,7 +16,17 @@ import MedicalPage from './components/MedicalPage';
 export type Page = 'landing' | 'analysis' | 'results' | 'dashboard' | 'chat' | 'doctors' | 'recommendations' | 'ingredients' | 'progress' | 'aging' | 'skin-type' | 'profile' | 'medical';
 
 // Shared state for analysis results
+export interface SkinMetricData {
+  key: string;
+  display_name: string;
+  percentage: number;
+  level: string;
+  interpretation: string;
+  reference_note: string;
+}
+
 export interface AnalysisResult {
+  // ── Existing fields ─────────────────────────────
   prediction: { class_name: string; display_name: string; confidence: number; category: string };
   top3: { class_name: string; display_name: string; confidence: number; category: string }[];
   risk_assessment: { level: string; label: string; color: string; action: string; is_cancerous: boolean; urgency: string };
@@ -27,6 +37,17 @@ export interface AnalysisResult {
   confidence_distribution: Record<string, number>;
   urgent_warning?: string;
   disclaimer: string;
+
+  // ── New fields (additive) ───────────────────────
+  skin_metrics?: SkinMetricData[];
+  assessment_paragraph?: string;
+  visible_features?: string[];
+  refer_to_dermatologist?: boolean;
+  llm_enriched?: boolean;
+  llm_overrode_resnet?: boolean;
+  second_prediction?: string;
+  second_confidence?: number;
+  validation_meta?: { blur_score: number; brightness: number; skin_ratio: number };
 }
 
 const App: React.FC = () => {
