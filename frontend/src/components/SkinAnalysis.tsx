@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { analyzeSkin } from '../api';
 import type { AnalysisResult } from '../App';
+import RejectionModal from './analyze/RejectionModal';
 
 interface Props {
   onAnalysisComplete: (result: AnalysisResult, imageUrl: string) => void;
@@ -23,6 +24,11 @@ const SkinAnalysis: React.FC<Props> = ({ onAnalysisComplete }) => {
   const [error, setError] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Rejection modal state
+  const [rejectionModalOpen, setRejectionModalOpen] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState<string>('');
+  const [rejectionMessage, setRejectionMessage] = useState<string>('');
 
   const handleFile = useCallback((f: File) => {
     if (!f.type.startsWith('image/')) {
@@ -70,9 +76,18 @@ const SkinAnalysis: React.FC<Props> = ({ onAnalysisComplete }) => {
       await new Promise(r => setTimeout(r, 300));
       onAnalysisComplete(result, preview!);
     } catch (err: any) {
-      setError(err.message || 'Analysis failed. Please try again.');
-      setIsAnalyzing(false);
-      setCurrentStep(-1);
+      // Handle 422 rejection specifically
+      if (err.status === 422 && err.detail) {
+        setRejectionReason(err.detail.rejection_reason ?? 'corrupt_or_invalid');
+        setRejectionMessage(err.detail.user_message ?? 'Unable to process this image.');
+        setRejectionModalOpen(true);
+        setIsAnalyzing(false);
+        setCurrentStep(-1);
+      } else {
+        setError(err.message || 'Analysis failed. Please try again.');
+        setIsAnalyzing(false);
+        setCurrentStep(-1);
+      }
     }
   };
 
@@ -201,6 +216,21 @@ const SkinAnalysis: React.FC<Props> = ({ onAnalysisComplete }) => {
           It is not a medical diagnosis. Always consult a qualified dermatologist for medical advice.
         </span>
       </div>
+
+      {/* Rejection Modal */}
+      {rejectionModalOpen && (
+        <RejectionModal
+          reason={rejectionReason}
+          userMessage={rejectionMessage}
+          onRetry={() => {
+            setRejectionModalOpen(false);
+            setFile(null);
+            setPreview(null);
+            fileInputRef.current?.click();
+          }}
+          onDismiss={() => setRejectionModalOpen(false)}
+        />
+      )}
     </div>
   );
 };
