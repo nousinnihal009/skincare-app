@@ -23,21 +23,13 @@ load_dotenv()
 
 logger = logging.getLogger("dermai.condition_advisor")
 
-# ── OpenAI client (lazy singleton) ────────────────────────
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-_openai_client = None
+import google.generativeai as genai
+genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+
 GPT_MINI_MODEL = "gpt-4o-mini"
 LLM_TIMEOUT_SECONDS = 2.0
 
 CATEGORY_D_CONDITIONS = {"actinic_keratosis", "melanoma_risk"}
-
-
-def _get_openai_client():
-    global _openai_client
-    if _openai_client is None and OPENAI_API_KEY:
-        from openai import AsyncOpenAI
-        _openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
-    return _openai_client
 
 
 # =====================================================================
@@ -569,14 +561,13 @@ class ConditionAdvisorEngine:
         Attempt LLM enrichment of why_explanation fields.
         2-second timeout — on failure, fallback_why is already in place.
         """
-        client = _get_openai_client()
-        if client is None:
-            logger.info("No OpenAI API key — skipping LLM enrichment")
+        if not os.environ.get("GEMINI_API_KEY"):
+            logger.info("No Gemini API key — skipping LLM enrichment")
             return response
 
         try:
             enriched_plan = await asyncio.wait_for(
-                self._llm_enrich_care_plan(client, response, kb, req),
+                self._llm_enrich_care_plan(response, kb, req),
                 timeout=LLM_TIMEOUT_SECONDS,
             )
             response.care_plan = enriched_plan
@@ -591,57 +582,51 @@ class ConditionAdvisorEngine:
 
     async def _llm_enrich_care_plan(
         self,
-        client: Any,
         response: ConditionResponse,
         kb: ConditionKB,
         req: ConditionRequest,
     ) -> list[CarePlanStep]:
         """
-        Ask GPT-4o-mini to write personalized why_explanation for each step.
+        Ask Gemini to write personalized why_explanation for each step.
         Single batched prompt for efficiency.
         """
-        steps_text = "\n".join(
-            f"Step {s.step} ({s.phase}, {s.category}): {s.recommendation}"
-            for s in response.care_plan
-        )
+        try:
+            steps_payload = [
+                {"step": s.step, "recommendation": s.recommendation}
+                for s in response.care_plan
+            ]
+            prompt = (
+                f"You are a warm dermatology educator writing care guidance for someone "
+                f"with {kb.display_name}. For each care plan step, write a "
+                f"why_explanation: 1-2 sentences in second person explaining why this step "
+                f"helps their specific condition. Use 'supports', 'manages', 'helps' — "
+                f"never 'treats' or 'cures'. "
+                f"Return ONLY a JSON array: "
+                f'[{{"step": int, "why_explanation": str}}, ...]\n\n'
+                f"Steps: {json.dumps(steps_payload)}"
+            )
 
-        prompt = (
-            f"You are a board-certified dermatologist AI assistant. "
-            f"A patient has {kb.display_name} ({req.severity} severity, "
-            f"affecting {', '.join(req.affected_areas)}, duration: {req.symptom_duration}).\n\n"
-            f"For each step below, write a concise, empathetic 1-2 sentence explanation "
-            f"of WHY this step matters for THIS specific patient. "
-            f"Use second person ('you'/'your'). Be medically accurate but accessible.\n\n"
-            f"Steps:\n{steps_text}\n\n"
-            f"Return ONLY a JSON array of strings, one per step, in order. No markdown."
-        )
+            def _call():
+                model    = genai.GenerativeModel("gemini-1.5-flash")
+                response = model.generate_content(prompt)
+                return response.text
 
-        resp = await client.chat.completions.create(
-            model=GPT_MINI_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=800,
-        )
+            raw   = await asyncio.wait_for(asyncio.to_thread(_call), timeout=2.0)
+            clean = raw.strip().replace("```json", "").replace("```", "").strip()
+            data  = json.loads(clean)
 
-        import json
-        content = resp.choices[0].message.content.strip()
-        # Strip possible markdown fences
-        if content.startswith("```"):
-            content = content.split("\n", 1)[1] if "\n" in content else content[3:]
-            if content.endswith("```"):
-                content = content[:-3]
-            content = content.strip()
+            enrichment_map = {item["step"]: item["why_explanation"] for item in data}
+            for step in response.care_plan:
+                if step.step in enrichment_map:
+                    step.why_explanation = enrichment_map[step.step]
 
-        explanations = json.loads(content)
+            response.llm_enriched = True
+            return response.care_plan
 
-        # Validate and apply
-        enriched = list(response.care_plan)
-        for i, step in enumerate(enriched):
-            if i < len(explanations) and isinstance(explanations[i], str) and len(explanations[i]) > 10:
-                step.why_explanation = explanations[i]
-            # else: keep fallback_why which is already in why_explanation
-
-        return enriched
+        except Exception as e:
+            logger.warning(f"[ConditionEnrichment] Gemini failed: {e} — using fallback_why")
+            response.llm_enriched = False
+            return response.care_plan
 
     # ── Condition Summary Helpers ─────────────────────────
 
