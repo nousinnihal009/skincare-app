@@ -48,8 +48,8 @@ load_dotenv()
 logger = logging.getLogger("dermai.chatbot")
 
 # ── Model config ──────────────────────────────────────────────────────
-GEMINI_PRO_MODEL   = "gemini-1.5-pro"      # main agent — best reasoning
-GEMINI_FLASH_MODEL = "gemini-1.5-flash"    # chips + intent — fast/cheap
+GEMINI_PRO_MODEL   = "gemini-pro-latest"      # main agent — best reasoning
+GEMINI_FLASH_MODEL = "gemini-flash-latest"    # chips + intent — fast/cheap
 
 # ── Timeouts ──────────────────────────────────────────────────────────
 AGENT_TIMEOUT_S  = 45.0   # main agent stream (pro model is slower)
