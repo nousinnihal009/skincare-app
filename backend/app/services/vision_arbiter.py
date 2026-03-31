@@ -96,7 +96,7 @@ class VisionArbiter:
 
             # Run in thread to avoid blocking event loop
             def _call_gemini():
-                model    = genai.GenerativeModel("gemini-1.5-flash")
+                model    = genai.GenerativeModel("gemini-flash-latest")
                 response = model.generate_content([prompt_text, image])
                 return response.text
 
